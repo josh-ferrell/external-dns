@@ -74,6 +74,9 @@ type Config struct {
 	OCPRouterName                  string
 	UpdateEvents                   bool
 	ResolveLoadBalancerHostname    bool
+	EnableLeaderElection           bool
+	LeaderElectionID               string
+	LeaderElectionNamespace        string
 }
 
 // ClientGenerator provides clients

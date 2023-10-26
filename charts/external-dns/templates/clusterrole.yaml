@@ -31,7 +31,14 @@ rules:
     resources: ["gateways"]
     verbs: ["get","watch","list"]
 {{- end }}
-
+{{- if ge .Values.replicaCount 2 }}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["*"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["*"]
+{{- end }}
 {{- if has "istio-virtualservice" .Values.sources }}
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices"]

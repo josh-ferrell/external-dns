@@ -10,7 +10,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       {{- include "external-dns.selectorLabels" . | nindent 6 }}
@@ -75,6 +75,12 @@ spec:
           {{- with .Values.env }}
           env:
             {{- toYaml . | nindent 12 }}
+            {{- if ge .Values.replicaCount 2 }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- end }}
           {{- end }}
           args:
             - --log-level={{ .Values.logLevel }}
@@ -104,6 +110,10 @@ spec:
             - --domain-filter={{ . }}
             {{- end }}
             - --provider={{ tpl .Values.provider $ }}
+            {{- if ge .Values.replicaCount 2 }}
+            - --enable-leader-election
+            - --leader-election-namespace={{ .Release.Namespace }}
+            {{- end }}
           {{- range .Values.extraArgs }}
             - {{ tpl . $ }}
           {{- end }}

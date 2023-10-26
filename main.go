@@ -37,6 +37,11 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/klog/v2"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"sigs.k8s.io/external-dns/controller"
 	"sigs.k8s.io/external-dns/endpoint"
 	"sigs.k8s.io/external-dns/pkg/apis/externaldns"
@@ -83,6 +88,10 @@ import (
 	"sigs.k8s.io/external-dns/provider/webhook"
 	"sigs.k8s.io/external-dns/registry"
 	"sigs.k8s.io/external-dns/source"
+)
+
+var (
+	client *clientset.Clientset
 )
 
 func main() {
@@ -155,6 +164,9 @@ func main() {
 		OCPRouterName:                  cfg.OCPRouterName,
 		UpdateEvents:                   cfg.UpdateEvents,
 		ResolveLoadBalancerHostname:    cfg.ResolveServiceLoadBalancerHostname,
+		EnableLeaderElection:           cfg.EnableLeaderElection,
+		LeaderElectionID:               cfg.LeaderElectionID,
+		LeaderElectionNamespace:        cfg.LeaderElectionNamespace,
 	}
 
 	// Lookup all the selected sources by names and pass them the desired configuration.
@@ -471,8 +483,61 @@ func main() {
 		ctrl.Source.AddEventHandler(ctx, func() { ctrl.ScheduleRunOnce(time.Now()) })
 	}
 
-	ctrl.ScheduleRunOnce(time.Now())
-	ctrl.Run(ctx)
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		log.Fatalf("failed to create config: %v", err)
+	}
+	client = clientset.NewForConfigOrDie(config)
+
+	podName := os.Getenv("POD_NAME")
+	if cfg.EnableLeaderElection {
+		log.Info("leader election enabled")
+		lock := createLock(podName, cfg.LeaderElectionID, cfg.LeaderElectionNamespace)
+		runLeaderElection(lock, ctx, cfg.LeaderElectionID, ctrl)
+	} else {
+		ctrl.ScheduleRunOnce(time.Now())
+		ctrl.Run(ctx)
+	}
+}
+
+func createLock(podName, lockName, lockNamespace string) *resourcelock.LeaseLock {
+	return &resourcelock.LeaseLock{
+		LeaseMeta: metav1.ObjectMeta{
+			Name:      lockName,
+			Namespace: lockNamespace,
+		},
+		Client: client.CoordinationV1(),
+		LockConfig: resourcelock.ResourceLockConfig{
+			Identity: podName,
+		},
+	}
+}
+
+func runLeaderElection(lock *resourcelock.LeaseLock, ctx context.Context, id string, ctrl controller.Controller) {
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock:            lock,
+		ReleaseOnCancel: true,
+		LeaseDuration:   15 * time.Second,
+		RenewDeadline:   10 * time.Second,
+		RetryPeriod:     2 * time.Second,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(c context.Context) {
+				klog.Info(fmt.Sprintf("leader %s started", lock.Identity()))
+				ctrl.ScheduleRunOnce(time.Now())
+				ctrl.Run(ctx)
+			},
+			OnStoppedLeading: func() {
+				klog.Info("no longer the leader, staying inactive.")
+			},
+			OnNewLeader: func(current_id string) {
+				if current_id == id {
+					klog.Info("still the leader!")
+					return
+				}
+				klog.Info("new leader is %s", current_id)
+			},
+		},
+	})
 }
 
 func handleSigterm(cancel func()) {

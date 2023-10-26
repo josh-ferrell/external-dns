@@ -215,6 +215,9 @@ type Config struct {
 	WebhookProviderReadTimeout         time.Duration
 	WebhookProviderWriteTimeout        time.Duration
 	WebhookServer                      bool
+	EnableLeaderElection               bool
+	LeaderElectionID                   string
+	LeaderElectionNamespace            string
 }
 
 var defaultConfig = &Config{
@@ -369,6 +372,9 @@ var defaultConfig = &Config{
 	WebhookProviderReadTimeout:  5 * time.Second,
 	WebhookProviderWriteTimeout: 10 * time.Second,
 	WebhookServer:               false,
+	EnableLeaderElection:        true,
+	LeaderElectionID:            "external-dns-leader",
+	LeaderElectionNamespace:     "",
 }
 
 // NewConfig returns new Config object
@@ -622,6 +628,11 @@ func (cfg *Config) ParseFlags(args []string) error {
 	app.Flag("webhook-provider-write-timeout", "[EXPERIMENTAL] The write timeout for the webhook provider in duration format (default: 10s)").Default(defaultConfig.WebhookProviderWriteTimeout.String()).DurationVar(&cfg.WebhookProviderWriteTimeout)
 
 	app.Flag("webhook-server", "[EXPERIMENTAL] When enabled, runs as a webhook server instead of a controller. (default: false).").BoolVar(&cfg.WebhookServer)
+
+	// Flags related to leader election
+	app.Flag("enable-leader-election", "When enabled, leader election will be used for the controller (default: disabled)").BoolVar(&cfg.EnableLeaderElection)
+	app.Flag("leader-election-id", "The name of the configmap that leader election will use for holding the leader lock (default: external-dns-leader)").Default(defaultConfig.LeaderElectionID).StringVar(&cfg.LeaderElectionID)
+	app.Flag("leader-election-namespace", "The namespace of the configmap that leader election will use for holding the leader lock (default: external-dns)").Default(defaultConfig.LeaderElectionNamespace).StringVar(&cfg.LeaderElectionNamespace)
 
 	_, err := app.Parse(args)
 	if err != nil {

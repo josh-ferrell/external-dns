@@ -8,6 +8,8 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
+replicaCount: 1
+
 imagePullSecrets: []
 
 nameOverride: ""
